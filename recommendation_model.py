@@ -10,7 +10,7 @@ numeric_cols = ['air_gram', 'energi_kal', 'protein_gram', 'lemak_gram', 'karbohi
                 'kalsium_mg', 'fosfor_mg', 'zatbesi_mg', 'natrium_mg', 'kalium_mg', 'tembaga_mg', 'seng_mg', 'vitc_mg']
 
 # Save the other columns for later use in API response
-metadata_cols = ['id', 'kode', 'sumber', 'gambar'] + numeric_cols
+metadata_cols = ['id', 'kode', 'sumber', 'gambar', 'satuan'] + numeric_cols
 
 # Ubah nilai yang asalnya ',' menjadi '.'
 data[numeric_cols] = data[numeric_cols].replace({',': '.'}, regex=True)

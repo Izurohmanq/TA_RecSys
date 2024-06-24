@@ -2,36 +2,64 @@ import os
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import pandas as pd
-from sklearn.metrics.pairwise import cosine_similarity
 from sklearn.preprocessing import StandardScaler
+from sklearn.neighbors import NearestNeighbors
 
 app = Flask(__name__)
 CORS(app)
 
 # Load data
 data = pd.read_csv("makanan9.csv")
-# Drop only the 'id', 'kode', and 'sumber' columns
-data = data.drop(['id', 'kode', 'sumber'], axis=1)
-numeric_cols = ['air_gram', 'energi_kal', 'protein_gram', 'lemak_gram', 'karbohidrat_gram', 'serat_gram', 'kalsium_mg', 'fosfor_mg', 'zatbesi_mg', 'natrium_mg', 'kalium_mg', 'tembaga_mg', 'seng_mg', 'vitc_mg']
+
+# Drop kolom yang tidak diperlukan
+data = data.drop(['id', 'kode', 'sumber', 'gambar', 'satuan'], axis=1)
+data['jenis_pangan_encoded'] = pd.factorize(data['jenis_pangan'])[0]
+
+# Ubah nilai yang asalnya ',' menjadi '.'
+numeric_cols = ['jenis_pangan_encoded', 'energi_kal', 'protein_gram', 'lemak_gram', 'karbohidrat_gram', 'serat_gram',
+                'kalsium_mg', 'fosfor_mg', 'zatbesi_mg', 'natrium_mg', 'kalium_mg', 'vitc_mg']
 data[numeric_cols] = data[numeric_cols].replace({',': '.'}, regex=True)
 data[numeric_cols] = data[numeric_cols].astype(float)
+
+# Normalisasi data
 scaler = StandardScaler()
 data_normalized = scaler.fit_transform(data[numeric_cols])
-cosine_sim = cosine_similarity(data_normalized, data_normalized)
 
-def get_recommendations(food_name, allergy_list):
-    food_index = data[data['nama_bahan'] == food_name].index[0]
+# Menggunakan Nearest Neighbors
+model = NearestNeighbors(n_neighbors=10, metric='cosine')
+model.fit(data_normalized)
+
+def get_recommendations(food_names, allergy_list):
+    # Cari indeks makanan yang cocok dengan nama makanan yang diberikan
+    food_indices = [data[data['nama_bahan'] == food_name].index[0] for food_name in food_names]
+    
+    # Filter makanan berdasarkan alergi
     filtered_data = data.copy()
     for allergy in allergy_list:
         filtered_data = filtered_data[~filtered_data['nama_bahan'].str.contains(allergy, case=False)]
         filtered_data = filtered_data[~filtered_data['jenis_pangan'].str.contains(allergy, case=False)]
-    sim_scores = list(enumerate(cosine_sim[food_index]))
-    sim_scores_df = pd.DataFrame(sim_scores, columns=['index', 'score'])
-    avg_sim_scores = sim_scores_df.groupby('index')['score'].mean().reset_index()
-    avg_sim_scores = avg_sim_scores.sort_values(by='score', ascending=False)
-    top_similar_food_indices = avg_sim_scores['index'].iloc[0:11].tolist()
-    recommendations = filtered_data.iloc[top_similar_food_indices].copy()
-    recommendations['similarity_score'] = avg_sim_scores['score'].iloc[0:11].tolist()
+        
+    # 500 dari buku KIA batas natrium untuk ibu hamil, 900 dari AKG batas untuk ibu hamil 
+    filtered_data = filtered_data[(filtered_data['natrium_mg'] < 500) | (filtered_data['retinol_mcg'] < 900)]
+    
+    # Mencari tetangga terdekat
+    distances, indices = model.kneighbors(data_normalized[food_indices])
+    
+    # Mendapatkan nama dan skor kemiripan makanan
+    recommendations = []
+    # similarity_scores = []
+    for idx_list, dist_list in zip(indices, distances):
+        for idx, dist in zip(idx_list, dist_list):
+            if idx not in food_indices:
+                recommendations.append({
+                    'nama_bahan': data.iloc[idx]['nama_bahan'],
+                    'jenis_pangan': data.iloc[idx]['jenis_pangan'],
+                    'gambar': '',
+                    'satuan': '', 
+                    'similarity_score': 1 - dist  # Cosine similarity is 1 - cosine distance
+                })
+    
+    recommendations = recommendations[:10]  # Mengambil 10 teratas
     return recommendations
 
 @app.route('/recommend', methods=['POST'])
@@ -46,10 +74,10 @@ def recommend():
 
     response = []
     for food_name in food_names:
-        recommendations = get_recommendations(food_name, allergy_list)
+        recommendations = get_recommendations([food_name], allergy_list)
         response.append({
             "pesan": f"Rekomendasi per 100 gram yang sesuai gizi pada makanan {food_name} adalah",
-            "rekomendasi": recommendations[['nama_bahan', 'jenis_pangan', 'gambar', 'satuan', 'similarity_score'] + numeric_cols].to_dict(orient='records')
+            "rekomendasi": recommendations
         })
 
     return jsonify(response)

@@ -9,10 +9,10 @@ app = Flask(__name__)
 CORS(app)
 
 # Load data
-data = pd.read_csv("makanan9.csv")
+data = pd.read_csv("makanan12.csv")
 
 # Drop kolom yang tidak diperlukan
-data = data.drop(['id', 'kode', 'sumber', 'gambar', 'satuan'], axis=1)
+data = data.drop(['id', 'kode', 'sumber', 'satuan'], axis=1)
 data['jenis_pangan_encoded'] = pd.factorize(data['jenis_pangan'])[0]
 
 # Ubah nilai yang asalnya ',' menjadi '.'
@@ -29,58 +29,142 @@ data_normalized = scaler.fit_transform(data[numeric_cols])
 model = NearestNeighbors(n_neighbors=10, metric='cosine')
 model.fit(data_normalized)
 
-def get_recommendations(food_names, allergy_list):
-    # Cari indeks makanan yang cocok dengan nama makanan yang diberikan
-    food_indices = [data[data['nama_bahan'] == food_name].index[0] for food_name in food_names]
-    
-    # Filter makanan berdasarkan alergi
-    filtered_data = data.copy()
-    for allergy in allergy_list:
-        filtered_data = filtered_data[~filtered_data['nama_bahan'].str.contains(allergy, case=False)]
-        filtered_data = filtered_data[~filtered_data['jenis_pangan'].str.contains(allergy, case=False)]
-        
-    # 500 dari buku KIA batas natrium untuk ibu hamil, 900 dari AKG batas untuk ibu hamil 
-    filtered_data = filtered_data[(filtered_data['natrium_mg'] < 500) | (filtered_data['retinol_mcg'] < 900)]
-    
-    # Mencari tetangga terdekat
-    distances, indices = model.kneighbors(data_normalized[food_indices])
-    
-    # Mendapatkan nama dan skor kemiripan makanan
-    recommendations = []
-    # similarity_scores = []
-    for idx_list, dist_list in zip(indices, distances):
-        for idx, dist in zip(idx_list, dist_list):
-            if idx not in food_indices:
-                recommendations.append({
-                    'nama_bahan': data.iloc[idx]['nama_bahan'],
-                    'jenis_pangan': data.iloc[idx]['jenis_pangan'],
-                    'gambar': '',
-                    'satuan': '', 
-                    'similarity_score': 1 - dist  # Cosine similarity is 1 - cosine distance
-                })
-    
-    recommendations = recommendations[:10]  # Mengambil 10 teratas
+def nutrition_need(umur, tb, bb, aktifitas, kondisi, waktu_makan):
+    aktivitas_factor = {
+        "Bed Rest": 1.1,
+        "bergerak terbatas": 1.2,
+        "bisa jalan": 1.3
+    }
+
+    if aktifitas not in aktivitas_factor:
+        return False
+
+    aktifitas = aktivitas_factor[aktifitas]
+
+    # Calculate BMR and macronutrient needs
+    BMR_perempuan = 655 + (9.6 * bb) + (1.8 * tb) - (4.7 * umur)
+    total_kalori = BMR_perempuan * aktifitas
+    karbohidrat = (0.6 * total_kalori) / 4
+    lemak = (0.25 * total_kalori) / 9
+    protein = (0.15 * total_kalori) / 4
+
+    batas_atas = {
+        'energi_kal': total_kalori,
+        'karbohidrat_gram': karbohidrat,
+        'lemak_gram': lemak,
+        'protein_gram': protein,
+        'serat_gram': 0,
+        'air_gram': 0,
+        'vitc_mg': 0,
+        'retinol_mcg': 0,
+        'kalsium_mg': 0,
+        'fosfor_mg': 0,
+        'zatbesi_mg': 0,
+        'kalium_mg': 0,
+        'natrium_mg': 0,
+        'tembaga_mg': 0
+    }
+
+    age_based_limits = [
+        (11, 12, {'serat_gram': 27, 'air_gram': 1850, 'vitc_mg': 50, 'retinol_mcg': 600, 'kalsium_mg': 1200, 'fosfor_mg': 1250, 'zatbesi_mg': 8, 'kalium_mg': 4400, 'natrium_mg': 1400, 'tembaga_mg': 700}),
+        (13, 15, {'serat_gram': 27, 'air_gram': 2100, 'vitc_mg': 65, 'retinol_mcg': 600, 'kalsium_mg': 1200, 'fosfor_mg': 1250, 'zatbesi_mg': 15, 'kalium_mg': 4800, 'natrium_mg': 1500, 'tembaga_mg': 795}),
+        (16, 18, {'serat_gram': 29, 'air_gram': 2150, 'vitc_mg': 75, 'retinol_mcg': 600, 'kalsium_mg': 1200, 'fosfor_mg': 1250, 'zatbesi_mg': 15, 'kalium_mg': 5000, 'natrium_mg': 1600, 'tembaga_mg': 890}),
+        (19, 29, {'serat_gram': 32, 'air_gram': 2350, 'vitc_mg': 75, 'retinol_mcg': 600, 'kalsium_mg': 1000, 'fosfor_mg': 700, 'zatbesi_mg': 18, 'kalium_mg': 4700, 'natrium_mg': 1500, 'tembaga_mg': 900}),
+        (30, 49, {'serat_gram': 30, 'air_gram': 2350, 'vitc_mg': 75, 'retinol_mcg': 600, 'kalsium_mg': 1000, 'fosfor_mg': 700, 'zatbesi_mg': 18, 'kalium_mg': 4700, 'natrium_mg': 1500, 'tembaga_mg': 900}),
+        (50, 64, {'serat_gram': 25, 'air_gram': 2350, 'vitc_mg': 75, 'retinol_mcg': 600, 'kalsium_mg': 1200, 'fosfor_mg': 700, 'zatbesi_mg': 8, 'kalium_mg': 4700, 'natrium_mg': 1400, 'tembaga_mg': 900}),
+        (65, 80, {'serat_gram': 22, 'air_gram': 1550, 'vitc_mg': 75, 'retinol_mcg': 600, 'kalsium_mg': 1200, 'fosfor_mg': 700, 'zatbesi_mg': 8, 'kalium_mg': 4700, 'natrium_mg': 1200, 'tembaga_mg': 900}),
+        (80, float('inf'), {'serat_gram': 20, 'air_gram': 1400, 'vitc_mg': 75, 'retinol_mcg': 600, 'kalsium_mg': 1200, 'fosfor_mg': 700, 'zatbesi_mg': 8, 'kalium_mg': 4700, 'natrium_mg': 1000, 'tembaga_mg': 900})
+    ]
+
+    for min_age, max_age, limits in age_based_limits:
+        if min_age <= umur <= max_age:
+            batas_atas.update(limits)
+            break
+
+    kondisi_based_adjustments = {
+        'hamil_trim_1': {'energi_kal': 180, 'karbohidrat_gram': 25, 'lemak_gram': 2.3, 'protein_gram': 1, 'serat_gram': 3, 'air_gram': 300, 'vitc_mg': 10, 'retinol_mcg': 300, 'kalsium_mg': 200, 'tembaga_mg': 100},
+        'hamil_trim_2': {'energi_kal': 300, 'karbohidrat_gram': 40, 'lemak_gram': 2.3, 'protein_gram': 10, 'serat_gram': 4, 'air_gram': 300, 'vitc_mg': 10, 'retinol_mcg': 300, 'kalsium_mg': 200, 'zatbesi_mg': 9, 'tembaga_mg': 100},
+        'hamil_trim_3': {'energi_kal': 300, 'karbohidrat_gram': 40, 'lemak_gram': 2.3, 'protein_gram': 30, 'serat_gram': 4, 'air_gram': 300, 'vitc_mg': 10, 'retinol_mcg': 300, 'kalsium_mg': 200, 'zatbesi_mg': 9, 'tembaga_mg': 100},
+        'menyusui_6_awal': {'energi_kal': 330, 'karbohidrat_gram': 45, 'lemak_gram': 2.2, 'protein_gram': 20, 'serat_gram': 5, 'air_gram': 800, 'vitc_mg': 45, 'retinol_mcg': 350, 'kalsium_mg': 200, 'zatbesi_mg': 9, 'kalium_mg': 400, 'tembaga_mg': 100},
+        'menyusui_6_kedua': {'energi_kal': 400, 'karbohidrat_gram': 55, 'lemak_gram': 2.4, 'protein_gram': 15, 'serat_gram': 5, 'air_gram': 700, 'vitc_mg': 25, 'retinol_mcg': 350, 'kalsium_mg': 200, 'zatbesi_mg': 9, 'kalium_mg': 400, 'tembaga_mg': 100}
+    }
+
+    if kondisi in kondisi_based_adjustments:
+        adjustments = kondisi_based_adjustments[kondisi]
+        for key, value in adjustments.items():
+            batas_atas[key] += value
+
+    # Membagi batas atas dengan waktu makan
+    for key in batas_atas:
+        batas_atas[key] /= waktu_makan
+
+    return batas_atas
+
+def get_recommendations(nutrition_limit, food_names):
+    recommendations = {}
+    for food_name in food_names:
+        all_distances, indices = model.kneighbors(data_normalized)
+        food_data = data[data['nama_bahan'] == food_name]
+
+        if food_data.empty:
+            continue
+
+        recommendations[food_name] = {
+            "within_limits": [],
+            "exceeding_limits": []
+        }
+
+        food_index = food_data.index[0]
+        neighbors = indices[food_index]
+
+        for neighbor_index in neighbors:
+            neighbor_data = data.iloc[neighbor_index].to_dict()
+            within_limits = all(neighbor_data[key] <= nutrition_limit[key] for key in nutrition_limit)
+            if within_limits:
+                recommendations[food_name]["within_limits"].append(neighbor_data)
+            else:
+                recommendations[food_name]["exceeding_limits"].append(neighbor_data)
     return recommendations
 
-@app.route('/recommend', methods=['POST'])
-def recommend():
-    request_data = request.json
-    food_names = request_data.get('food_names')
-    allergy_list = request_data.get('allergy_list')
-    if not food_names:
-        return jsonify({'error': "'food_names' parameter is required"}), 400
-    if not allergy_list:
-        allergy_list = []
+@app.route('/nutrition', methods=['POST'])
+def nutrition_endpoint():
+    data = request.get_json()
+    umur = data['umur']
+    tb = data['tb']
+    bb = data['bb']
+    aktifitas = data['aktifitas']
+    kondisi = data['kondisi']
+    waktu_makan = data['waktu_makan']
+    food_names = data['food_names']
+    
+    limits = nutrition_need(umur, tb, bb, aktifitas, kondisi, waktu_makan)
+    
+    if not limits:
+        return jsonify({"error": "Invalid activity level"}), 400
 
-    response = []
+    recommendations = get_recommendations(limits, food_names)
+
+    output = []
+    output.append({
+        "pesan_kebutuhan": "Berikut adalah kebutuhan gizimu",
+        "kebutuhan_gizi": limits
+    }) 
     for food_name in food_names:
-        recommendations = get_recommendations([food_name], allergy_list)
-        response.append({
-            "pesan": f"Rekomendasi per 100 gram yang sesuai gizi pada makanan {food_name} adalah",
-            "rekomendasi": recommendations
-        })
+        if food_name in recommendations:
+            within_limits = recommendations[food_name]["within_limits"]
+            exceeding_limits = recommendations[food_name]["exceeding_limits"]
+            if within_limits:
+                output.append({
+                    "pesan_rekomendasi": f"Rekomendasi per 100 gram yang sesuai gizi pada makanan {food_name} adalah",
+                    "rekomendasi": within_limits
+                })
+            if exceeding_limits:
+                output.append({
+                    "pesan_hindar": f"makanan yang sebaiknya dikurangi 100g karena melebihi batas kebutuhan dengan nilai gizi yang sesuai gizi pada makanan {food_name} adalah",
+                    "rekomendasi": exceeding_limits
+                })           
 
-    return jsonify(response)
+    return jsonify(output)
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5003)))

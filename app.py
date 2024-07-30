@@ -9,20 +9,20 @@ app = Flask(__name__)
 CORS(app)
 
 # Load data
-data = pd.read_csv("resisData.csv")
+data = pd.read_csv("makanan15.csv")
 
 # Drop kolom yang tidak diperlukan
 data = data.drop(['id', 'kode', 'sumber', 'satuan'], axis=1)
 data['jenis_pangan_encoded'] = pd.factorize(data['jenis_pangan'])[0]
 
 # Ubah nilai yang asalnya ',' menjadi '.'
-# numeric_cols = ["jenis_pangan_encoded", "air_gram", "energi_kal", "protein_gram", "lemak_gram", "karbohidrat_gram",
-#     "serat_gram", "abu_gram", "kalsium_mg", "fosfor_mg", "zatbesi_mg", "natrium_mg",
-#     "kalium_mg", "tembaga_mg", "seng_mg", "retinol_mcg", "thiamin_mg", "riboflavin_mg",
-#     "niasin_mg", "vitc_mg", "bdd"]
-numeric_cols = [ "jenis_pangan_encoded", "air_gram", "energi_kal", "protein_gram", "lemak_gram", "karbohidrat_gram",
-    "serat_gram", "natrium_mg", "kalium_mg", "bdd"
-]
+numeric_cols = ["jenis_pangan_encoded", "air_gram", "energi_kal", "protein_gram", "lemak_gram", "karbohidrat_gram",
+    "serat_gram", "abu_gram", "kalsium_mg", "fosfor_mg", "zatbesi_mg", "natrium_mg",
+    "kalium_mg", "tembaga_mg", "seng_mg", "retinol_mcg", "thiamin_mg", "riboflavin_mg",
+    "niasin_mg", "vitc_mg", "bdd"]
+# numeric_cols = [ "jenis_pangan_encoded", "air_gram", "energi_kal", "protein_gram", "lemak_gram", "karbohidrat_gram",
+#     "serat_gram", "natrium_mg", "kalium_mg", "bdd"
+# ]
 data[numeric_cols] = data[numeric_cols].replace({',': '.'}, regex=True)
 data[numeric_cols] = data[numeric_cols].astype(float)
 

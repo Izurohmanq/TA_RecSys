@@ -2,3 +2,4 @@ Flask
 scikit-learn
 pandas
 flask_cors
+gunicorn

@@ -4,15 +4,12 @@ from flask_cors import CORS
 import pandas as pd
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.neighbors import NearestNeighbors
-import random
-
 
 app = Flask(__name__)
 CORS(app)
 
 # Load data
 data = pd.read_csv("resisData3.csv")
-food_data = pd.read_csv("resisDataMP.csv")
 
 # Drop kolom yang tidak diperlukan
 data = data.drop(['id', 'kode', 'sumber', 'satuan'], axis=1)
@@ -23,7 +20,9 @@ numeric_cols = ["jenis_pangan_encoded", "air_gram", "energi_kal", "protein_gram"
     "serat_gram", "abu_gram", "kalsium_mg", "fosfor_mg", "zatbesi_mg", "natrium_mg",
     "kalium_mg", "tembaga_mg", "seng_mg", "retinol_mcg", "thiamin_mg", "riboflavin_mg",
     "niasin_mg", "vitc_mg", "bdd"]
-
+# numeric_cols = [ "jenis_pangan_encoded", "air_gram", "energi_kal", "protein_gram", "lemak_gram", "karbohidrat_gram",
+#     "serat_gram", "natrium_mg", "kalium_mg", "bdd"
+# ]
 data[numeric_cols] = data[numeric_cols].replace({',': '.'}, regex=True)
 data[numeric_cols] = data[numeric_cols].astype(float)
 
@@ -32,17 +31,15 @@ scaler = MinMaxScaler()
 data_normalized = scaler.fit_transform(data[numeric_cols])
 
 # Menggunakan Nearest Neighbors
-model = NearestNeighbors(n_neighbors=4, metric='euclidean')
+model = NearestNeighbors(n_neighbors=4, metric='cosine')
 model.fit(data_normalized)
 
 
 def nutrition_need(umur, tb, bb, aktifitas, kondisi, waktu_makan):
     aktivitas_factor = {
-        'sedentary': 1.2,
-        'lightly_active': 1.375,
-        'moderately_active': 1.55,
-        'very_active': 1.725,
-        'extra_active': 1.9
+        "Bed Rest": 1.1,
+        "bergerak terbatas": 1.2,
+        "bisa jalan": 1.3
     }
 
     if aktifitas not in aktivitas_factor:
@@ -151,68 +148,6 @@ def get_recommendations(nutrition_limit, food_names):
                     neighbor_data)
     return recommendations
 
-def filter_food_data(food_data):
-    staple_foods = food_data[food_data['jenis_pangan'].str.contains('mp')].copy()
-    side_dishes = food_data[food_data['jenis_pangan'].str.contains('ikan kerang udang|daging unggas')].copy()
-    fruits = food_data[food_data['jenis_pangan'].str.contains('buah')].copy()
-    vegetables = food_data[food_data['jenis_pangan'].str.contains('sayuran')].copy()
-    
-    return staple_foods, side_dishes, fruits, vegetables
-
-def knn_recommendation(staple_foods, side_dishes, fruits, vegetables):
-    def fit_knn(df):
-        features = df[['energi_kal', 'karbohidrat_gram', 'protein_gram', 'lemak_gram']].values
-        knn = NearestNeighbors(n_neighbors=5, metric='cosine')
-        knn.fit(features)
-        return knn
-
-    staple_knn = fit_knn(staple_foods)
-    side_knn = fit_knn(side_dishes)
-    fruit_knn = fit_knn(fruits)
-    vegetable_knn = fit_knn(vegetables)
-    
-    staple_neighbors = staple_knn.kneighbors(return_distance=False)
-    side_neighbors = side_knn.kneighbors(return_distance=False)
-    fruit_neighbors = fruit_knn.kneighbors(return_distance=False)
-    vegetable_neighbors = vegetable_knn.kneighbors(return_distance=False)
-    
-    staple_options = staple_foods.iloc[staple_neighbors.flatten()]
-    side_options = side_dishes.iloc[side_neighbors.flatten()]
-    fruit_options = fruits.iloc[fruit_neighbors.flatten()]
-    vegetable_options = vegetables.iloc[vegetable_neighbors.flatten()]
-    
-    return staple_options, side_options, fruit_options, vegetable_options
-
-def generate_random_plates(staple_options, side_options, fruit_options, vegetable_options):
-    plates = []
-    for _ in range(3):
-        plate = [
-            random.choice(staple_options.to_dict('records')),
-            random.choice(side_options.to_dict('records')),
-            random.choice(fruit_options.to_dict('records')),
-            random.choice(vegetable_options.to_dict('records'))
-        ]
-        plates.append(plate)
-    return plates
-
-def calculate_plate_nutrients(plate):
-    total_calories = 0
-    total_carbs = 0
-    total_protein = 0
-    total_fats = 0
-    
-    for sublist in plate:
-        total_calories += sublist['energi_kal']
-        total_carbs += sublist['karbohidrat_gram']
-        total_protein += sublist['protein_gram']
-        total_fats += sublist['lemak_gram']
-    
-    return {
-        "total_calories": round(total_calories, 2),
-        "total_carbs": round(total_carbs, 2),
-        "total_protein": round(total_protein, 2),
-        "total_fats": round(total_fats, 2)
-    }
 
 @app.route('/nutrition', methods=['POST'])
 def nutrition_endpoint():
@@ -223,7 +158,7 @@ def nutrition_endpoint():
     aktifitas = data['aktifitas']
     kondisi = data['kondisi']
     waktu_makan = data['waktu_makan']
-    food_names = data.get('food_names', [])
+    food_names = data['food_names']
 
     limits = nutrition_need(umur, tb, bb, aktifitas, kondisi, waktu_makan)
 
@@ -237,38 +172,20 @@ def nutrition_endpoint():
         "pesan_kebutuhan": "Berikut adalah kebutuhan gizimu",
         "kebutuhan_gizi": limits
     })
-    if food_names:
-        for food_name in food_names:
-            if food_name in recommendations:
-                within_limits = recommendations[food_name]["within_limits"]
-                exceeding_limits = recommendations[food_name]["exceeding_limits"]
-                if within_limits:
-                    output.append({
-                        "pesan_rekomendasi": f"Rekomendasi per 100 gram yang sesuai gizi pada makanan {food_name} adalah",
-                        "rekomendasi": within_limits
-                    })
-                if exceeding_limits:
-                    output.append({
-                        "pesan_hindar": f"Makanan yang sebaiknya dikurangi untuk dikonsumsi karena melebihi batas kebutuhan gizi yang sesuai gizi pada makanan {food_name} adalah",
-                        "rekomendasi": exceeding_limits
-                    })
-    else:
-        staple_foods, side_dishes, fruits, vegetables = filter_food_data(food_data)
-        staple_options, side_options, fruit_options, vegetable_options = knn_recommendation(staple_foods, side_dishes, fruits, vegetables)
-        recommended_plates = generate_random_plates(staple_options, side_options, fruit_options, vegetable_options)
-
-        plate_recommendations = []
-        for i, plate in enumerate(recommended_plates, 1):
-            nutrients = calculate_plate_nutrients(plate)
-            plate_recommendations.append({
-                f"plate_{i}": plate,
-                f"plate_{i}_nutrients": nutrients
-            })
-
-        output.append({
-            "pesan_piring": "Berikut adalah 3 rekomendasi isi piring yang sesuai denganmu:",
-            "piring": plate_recommendations
-        })
+    for food_name in food_names:
+        if food_name in recommendations:
+            within_limits = recommendations[food_name]["within_limits"]
+            exceeding_limits = recommendations[food_name]["exceeding_limits"]
+            if within_limits:
+                output.append({
+                    "pesan_rekomendasi": f"Rekomendasi per 100 gram yang sesuai gizi pada makanan {food_name} adalah",
+                    "rekomendasi": within_limits
+                })
+            if exceeding_limits:
+                output.append({
+                    "pesan_hindar": f"Makanan yang sebaiknya dikurangi untuk dikonsumsi karena melebihi batas kebutuhan gizi yang sesuai gizi pada makanan {food_name} adalah",
+                    "rekomendasi": exceeding_limits
+                })
 
     return jsonify(output)
 
